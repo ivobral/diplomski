@@ -1,0 +1,9 @@
+provider,strategy,total,exact_match,exact_match_rate,execution_accuracy,execution_accuracy_rate,validation_success_rate,error_rate,blocked,retry_used,mean_llm_ms,mean_total_ms,total_input_tokens,total_output_tokens
+openai(https://models.github.ai/inference),C,10,0,0.0,0,0.0,0.3,0.7,0,0,1825.98,2093.84,6503,494
+gemini,A,10,0,0.0,0,0.0,0.0,1.0,0,0,0.0,0.0,0,0
+gemini,D,10,0,0.0,0,0.0,0.0,1.0,0,0,0.0,0.0,0,0
+openai(https://models.github.ai/inference),D,10,0,0.0,1,0.1,0.5,0.5,0,2,1327.85,1662.3,7736,332
+openai(https://models.github.ai/inference),A,10,0,0.0,0,0.0,0.0,1.0,0,0,963.87,972.35,1954,204
+gemini,B,10,0,0.0,0,0.0,0.0,1.0,0,0,0.0,0.0,0,0
+openai(https://models.github.ai/inference),B,10,0,0.0,0,0.0,0.0,1.0,0,0,0.0,0.0,0,0
+gemini,C,10,0,0.0,0,0.0,0.0,1.0,0,0,0.0,0.0,0,0

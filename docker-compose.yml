@@ -1,0 +1,109 @@
+# =============================================================================
+# NL2SQL — Docker Compose orkestracija
+# =============================================================================
+# Servisi:
+#   postgres   — Chinook baza + benchmark baze; init iz scripts/
+#   backend    — FastAPI servis (Python 3.12 + uv); ovisi o postgres
+#   frontend   — Next.js dev/start; ovisi o backend
+#
+# Pokretanje:
+#   docker compose up --build
+#
+# Filozofija: jednostavna kompozicija koja dignete sve. Bez multi-stage
+# produkcijskih optimizacija, bez reverse proxy-a, bez Kubernetes-a.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: nl2sql-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      # Init scripts se izvršavaju protiv default `postgres` baze. Chinook
+      # dump sam izvršava DROP/CREATE DATABASE chinook + \c chinook, pa
+      # POSTGRES_DB OSTAVLJAMO default — inače DROP DATABASE pada zbog
+      # aktivne sesije nad istom bazom.
+      POSTGRES_DB: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      # Init skripte se izvršavaju automatski pri prvom pokretanju kontejnera
+      # (PostgreSQL ulaz docker-entrypoint-initdb.d). Redoslijed je abecedni,
+      # zato prefiks 01_ / 02_ — Chinook dump mora prije read-only usera.
+      - ./data/chinook/chinook_postgres.sql:/docker-entrypoint-initdb.d/01_chinook.sql:ro
+      - ./scripts/create_readonly_user.sql:/docker-entrypoint-initdb.d/02_readonly_user.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d chinook"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 30s
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: nl2sql-backend
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      # Override za Docker network — postgres je hostname servisa.
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/chinook
+      READONLY_DATABASE_URL: postgresql+asyncpg://nl2sql_readonly:readonly@postgres:5432/chinook
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      # Mountanje app/ za hot reload tijekom razvoja (uvicorn --reload).
+      # RW (ne :ro) jer ruff --fix i Edit tool trebaju pisati natrag.
+      - ./backend/app:/app/app
+      # Mountanje smoke skripti — pokreću se kroz `docker compose exec backend
+      # python scripts/test_*.py`. RW jer ruff --fix piše natrag (auto-format).
+      - ./backend/scripts:/app/scripts
+      # Tests mount za pytest runove unutar kontejnera. RW jer ruff --fix
+      # piše natrag u file-ove (auto-format / auto-import-sort).
+      - ./backend/tests:/app/tests
+      # Data folder — read-write jer download_bird.py i benchmark runner trebaju
+      # spremati u `data/bird_mini/` i `data/benchmark_runs/`. Chinook dump je
+      # ovdje i koristi se i s postgres side (preko zasebnog mount-a iznad).
+      - ./data:/app/data
+    healthcheck:
+      # /api/health vraća {"status":"ok"} bez ovisnosti o LLM-u — provjerava
+      # samo da je FastAPI uvicorn server zaista pokrenut i da DB engine
+      # može otvoriti konekciju. Frontend depends_on čeka ovaj health pa
+      # ne mora retry-ati startup race protiv backenda.
+      test: ["CMD-SHELL", "python -c \"import urllib.request, sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/api/health', timeout=3).status == 200 else 1)\""]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 30s
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: nl2sql-frontend
+    restart: unless-stopped
+    environment:
+      # Frontend u browseru zove backend preko hosta (localhost), ne preko
+      # Docker DNS-a — zato koristimo izvorni .env, ne Docker network ime.
+      NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:8000}
+    ports:
+      - "3000:3000"
+    volumes:
+      # Hot-reload za src/ tijekom razvoja. `next dev` watcher se brine
+      # za rebuild. node_modules NE mountamo (oslanjamo se na one iz image-a).
+      - ./frontend/src:/app/src
+      - ./frontend/public:/app/public
+    depends_on:
+      backend:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
+    name: nl2sql_postgres_data

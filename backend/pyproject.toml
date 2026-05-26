@@ -1,0 +1,70 @@
+[project]
+name = "nl2sql-backend"
+version = "0.1.0"
+description = "NL2SQL backend — FastAPI servis za generiranje SQL upita iz prirodnog jezika"
+requires-python = ">=3.12"
+readme = "../README.md"
+
+# Filozofija ovisnosti: izravni SDK-ovi, bez wrapper-frameworka.
+# NEMA LangChain, LlamaIndex, ni sličnih agentskih biblioteka — diplomski
+# rad mora demonstrirati eksplicitnu kontrolu nad promptima, validacijom
+# i izvršavanjem, ne wrapper-nad-wrapperom apstrakciju.
+dependencies = [
+    # Web framework
+    "fastapi[standard]>=0.115.0",
+    "uvicorn[standard]>=0.32.0",
+
+    # Database
+    "sqlalchemy[asyncio]>=2.0.30",
+    "asyncpg>=0.29.0",
+    # SQLite async driver — koristi se isključivo za BIRD benchmark
+    # (gold SQL iz BIRD-a je pisan za SQLite; konverzija u Postgres bi rušila
+    # fidelity rezultata). Glavni Chinook demo i dalje koristi asyncpg.
+    "aiosqlite>=0.20.0",
+
+    # Konfiguracija i DTO-i
+    "pydantic>=2.8.0",
+    "pydantic-settings>=2.5.0",
+
+    # SQL parsing — koristi se za validation pipeline (Faza 2)
+    "sqlglot>=25.0.0",
+
+    # LLM provideri — izravni SDK-ovi
+    "anthropic>=0.40.0",
+    "openai>=1.50.0",
+    "httpx>=0.27.0",
+
+    # Strukturirano logiranje
+    "structlog>=24.4.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3.0",
+    "pytest-asyncio>=0.24.0",
+    "ruff>=0.7.0",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "W"]
+ignore = [
+    "E501",  # docstring-ovi u kodu znaju biti duži; čitljivost > strogi 100 cols
+    "B008",  # FastAPI ``= Depends(...)`` u argument defaults — ovo JE standard
+             # pattern za FastAPI, ne anti-pattern. B008 je generic Python lint
+             # koji ne razumije FastAPI semantiku.
+    "B904",  # ``raise ... from`` — često nije potreban u našim defensive catch-evima
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+# Filter pytest warnings koje ne kontroliramo (sqlglot deprecation, asyncio
+# loop teardown messages) da test output bude čist i fokusiran.
+filterwarnings = [
+    "ignore::DeprecationWarning:sqlglot",
+    "ignore::pytest.PytestUnraisableExceptionWarning",
+]

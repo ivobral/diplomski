@@ -1,0 +1,64 @@
+# Environment & secrets
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+env/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+*.egg-info/
+dist/
+build/
+
+# uv
+.uv-cache/
+
+# Node / Next.js
+node_modules/
+.next/
+out/
+*.tsbuildinfo
+next-env.d.ts
+
+# Logs
+*.log
+logs/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+.DS_Store
+
+# Docker
+docker-compose.override.yml
+
+# Data — ne commitati velike dumpove i benchmark dataset-e
+data/chinook/*.sql
+data/bird_mini/databases/
+data/bird_mini/*.zip
+data/bird_mini/*.json
+!data/.gitkeep
+
+# Benchmark JSON-ovi koji premašuju GitHub 50MB limit (predicted_rows polje
+# eksplodira kad pitanje vraća 10k+ redaka iz velikih BIRD baza). CSV-ovi
+# ostaju u repu — mali su (<1KB) i sadrže sve agregirane metrike za thesis.
+data/benchmark_runs/20260525T183450Z.json
+data/benchmark_runs/20260525T221508Z.json
+data/benchmark_runs/20260525T153833Z.json
+
+# Test outputs
+coverage/
+.coverage
+htmlcov/
+benchmark_results/

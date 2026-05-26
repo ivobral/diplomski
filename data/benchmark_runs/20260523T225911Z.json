@@ -1,0 +1,120 @@
+{
+  "run_id": "20260523T225911Z",
+  "started_at": "2026-05-23T22:59:11.419573+00:00",
+  "finished_at": "2026-05-23T23:03:31.933368+00:00",
+  "config": {
+    "providers": [
+      "openai"
+    ],
+    "strategies": [
+      "D"
+    ],
+    "limit": 3,
+    "difficulty": null,
+    "include_security": false
+  },
+  "aggregates": [
+    {
+      "provider": "openai(openai-default)",
+      "strategy": "D",
+      "total": 3,
+      "exact_match": 0,
+      "exact_match_rate": 0.0,
+      "execution_accuracy": 0,
+      "execution_accuracy_rate": 0.0,
+      "validation_success": 0,
+      "validation_success_rate": 0.0,
+      "blocked": 0,
+      "error": 3,
+      "error_rate": 1.0,
+      "retry_used": 0,
+      "mean_llm_ms": 0.0,
+      "mean_total_ms": 0.0,
+      "total_input_tokens": 0,
+      "total_output_tokens": 0,
+      "by_difficulty": {
+        "simple": {
+          "total": 2
+        },
+        "moderate": {
+          "total": 1
+        }
+      }
+    }
+  ],
+  "question_results": [
+    {
+      "question_id": 5,
+      "db_id": "california_schools",
+      "question": "How many schools with an average score in Math greater than 400 in the SAT test are exclusively virtual?",
+      "difficulty": "simple",
+      "strategy": "D",
+      "provider": "openai(openai-default)",
+      "gold_sql": "SELECT COUNT(DISTINCT T2.School) FROM satscores AS T1 INNER JOIN schools AS T2 ON T1.cds = T2.CDSCode WHERE T2.Virtual = 'F' AND T1.AvgScrMath > 400",
+      "predicted_sql": null,
+      "normalized_sql": null,
+      "validated": false,
+      "executed": false,
+      "blocked": false,
+      "error_reason": "exception: Self-consistency: no candidates generated",
+      "retry_count": 0,
+      "llm_ms": 0.0,
+      "validation_ms": 0.0,
+      "execution_ms": 0.0,
+      "total_ms": 0.0,
+      "input_tokens": null,
+      "output_tokens": null,
+      "predicted_columns": [],
+      "predicted_rows": []
+    },
+    {
+      "question_id": 12,
+      "db_id": "california_schools",
+      "question": "Among the schools with an SAT excellence rate of over 0.3, what is the highest eligible free rate for students aged 5-17?",
+      "difficulty": "moderate",
+      "strategy": "D",
+      "provider": "openai(openai-default)",
+      "gold_sql": "SELECT MAX(CAST(T1.`Free Meal Count (Ages 5-17)` AS REAL) / T1.`Enrollment (Ages 5-17)`) FROM frpm AS T1 INNER JOIN satscores AS T2 ON T1.CDSCode = T2.cds WHERE CAST(T2.NumGE1500 AS REAL) / T2.NumTstTakr > 0.3",
+      "predicted_sql": null,
+      "normalized_sql": null,
+      "validated": false,
+      "executed": false,
+      "blocked": false,
+      "error_reason": "exception: Self-consistency: no candidates generated",
+      "retry_count": 0,
+      "llm_ms": 0.0,
+      "validation_ms": 0.0,
+      "execution_ms": 0.0,
+      "total_ms": 0.0,
+      "input_tokens": null,
+      "output_tokens": null,
+      "predicted_columns": [],
+      "predicted_rows": []
+    },
+    {
+      "question_id": 11,
+      "db_id": "california_schools",
+      "question": "Please list the codes of the schools with a total enrollment of over 500.",
+      "difficulty": "simple",
+      "strategy": "D",
+      "provider": "openai(openai-default)",
+      "gold_sql": "SELECT T2.CDSCode FROM schools AS T1 INNER JOIN frpm AS T2 ON T1.CDSCode = T2.CDSCode WHERE T2.`Enrollment (K-12)` + T2.`Enrollment (Ages 5-17)` > 500",
+      "predicted_sql": null,
+      "normalized_sql": null,
+      "validated": false,
+      "executed": false,
+      "blocked": false,
+      "error_reason": "exception: Self-consistency: no candidates generated",
+      "retry_count": 0,
+      "llm_ms": 0.0,
+      "validation_ms": 0.0,
+      "execution_ms": 0.0,
+      "total_ms": 0.0,
+      "input_tokens": null,
+      "output_tokens": null,
+      "predicted_columns": [],
+      "predicted_rows": []
+    }
+  ],
+  "security": null
+}
