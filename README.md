@@ -323,7 +323,6 @@ Ovi nalazi su značajni jer **idu protiv očekivanja** — tipično rad bi tvrdi
 
 ```
 dipl/
-├── CLAUDE.md                          # spec — auto-loaded by Claude Code
 ├── README.md                          # ovaj file
 ├── docker-compose.yml                 # postgres + backend + frontend
 ├── .env.example                       # template env varijabli
@@ -596,8 +595,6 @@ Naša Cascade arhitektura je originalan dizajn — sintetiza gornjih radova s **
 
 ## Licenca i autorstvo
 
-Diplomski rad. Autor: **Ivo**.
+Diplomski rad. Autor: **Ivo Bralić**.
 
 Kontakt: ivo@netlaw.com
-
-> Zahvalna napomena: ovaj projekt je razvijen u suradnji s **Claude Code** (Anthropic) kao pair-programming asistentom. Arhitekturne odluke, eksperimentalna analiza i interpretacija rezultata su autorske; AI je pomagao s boilerplate kodom, refactoring-om i pisanjem testova.

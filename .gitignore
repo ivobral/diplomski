@@ -40,6 +40,13 @@ logs/
 *.swp
 .DS_Store
 
+# Lokalne razvojne biljeske i interni state — ne idu u repo
+.claude/
+CLAUDE.md
+PLAN.md
+NOTES.md
+TODO.md
+
 # Docker
 docker-compose.override.yml
 
