@@ -92,4 +92,4 @@ docker compose exec backend pytest tests/
 
 ## Autor
 
-Ivo Bralić · ivo@netlaw.com
+Ivo Bralić · ib002313382@fer.hr
