@@ -63,6 +63,10 @@ data/bird_mini/*.json
 data/benchmark_runs/20260525T183450Z.json
 data/benchmark_runs/20260525T221508Z.json
 data/benchmark_runs/20260525T153833Z.json
+data/benchmark_runs/20260621T191805Z.json
+
+# Audit log — generira se runtime-om, ne treba ići u git
+data/audit_log.jsonl
 
 # Test outputs
 coverage/

@@ -29,7 +29,6 @@ from app.services.execution_service import ExecutionResult
 from app.services.query_service import QueryService
 from app.services.retry_engine import RetryEngine
 from app.validation.validator import SqlValidator
-from tests.conftest import _StubInspector
 
 # ----------------------------------------------------------------------
 # Mock objekti
@@ -101,7 +100,7 @@ def mock_executor() -> MockExecutor:
 
 
 @pytest.fixture
-def client(chinook_schema: DatabaseSchema, mock_executor: MockExecutor) -> TestClient:
+def client(stub_inspector, chinook_schema: DatabaseSchema, mock_executor: MockExecutor) -> TestClient:
     """FastAPI TestClient s overrideanim ovisnostima.
 
     Override-amo:
@@ -113,7 +112,7 @@ def client(chinook_schema: DatabaseSchema, mock_executor: MockExecutor) -> TestC
     Service se sastavi ručno s tim mock-ovima.
     """
 
-    inspector = _StubInspector(chinook_schema)
+    inspector = stub_inspector(chinook_schema)
     mock_llm = MockLLM(
         responses={
             "how many artist": "SELECT COUNT(*) FROM artist",

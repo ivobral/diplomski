@@ -1,10 +1,9 @@
-"""API DTO-i za /api/query endpoint.
+"""API DTO schemas for /api/query — request input and response output.
 
-Faza 1: definicije postoje, ali endpoint vraća 501. Faza 2 implementira
-stvarno generiranje i izvršavanje.
+- ``QueryRequest``       — incoming question + optional strategy / database
+- ``QueryResponse``      — generated SQL, execution result, status, latency
+- ``LatencyBreakdown``   — per-phase timing (LLM / validation / execution)
 """
-
-from __future__ import annotations
 
 from typing import Any, Literal
 
@@ -12,31 +11,32 @@ from pydantic import BaseModel, Field
 
 
 class QueryRequest(BaseModel):
-    """Korisničko pitanje na prirodnom jeziku."""
+    """User question in natural language."""
 
     question: str = Field(min_length=1, max_length=2000)
-    # Strategija određuje koliko se konteksta šalje LLM-u. Polje je
-    # opcionalno — ako nije zadano, koristi se najbogatija strategija
-    # (D, s validacijom i retry-em). Korisno za eksperimente A/B/C/D.
+    # Strategy controls how much context goes to the LLM. None → D (full
+    # pipeline). Other values (A/B/C) exist only for the ablation experiment.
     strategy: Literal["A", "B", "C", "D"] | None = None
-    # Opcionalan override LLM providera — ako je naveden, koristi se za
-    # ovaj request umjesto default-a iz settings.LLM_PROVIDER. Omogućava
-    # frontend dropdown za usporedbu modela bez restart-a backenda.
-    # ``None`` znači "koristi default providera" (Pydantic default).
-    provider: Literal["anthropic", "openai", "ollama", "gemini"] | None = None
+    # Database id — ``"chinook"`` (Postgres demo) or a BIRD SQLite db_id.
+    # The handler dispatches to the right pipeline based on this.
+    database: str = "chinook"
+    # Reserved — kept so the UI can pre-emptively pass a provider override.
+    # Single-provider build: only ``"openai"`` is accepted by the factory.
+    provider: Literal["openai"] | None = None
 
 
 class LatencyBreakdown(BaseModel):
-    """Mjerenje latencije po fazama — direktno za benchmark u Fazi 4."""
+    """Per-phase latency in milliseconds — granular for honest benchmarks."""
 
-    llm_ms: float | None = None
-    validation_ms: float | None = None
-    execution_ms: float | None = None
+    prompt_build_ms: float | None = None    # schema fetch + template formatting
+    llm_ms: float | None = None             # LLM API call(s), cumulative over retries
+    validation_ms: float | None = None      # AST + safety + semantic + enforcers
+    execution_ms: float | None = None       # read-only DB query
     total_ms: float | None = None
 
 
 class QueryResponse(BaseModel):
-    """Rezultat /api/query — što frontend prikazuje."""
+    """Result of /api/query — exactly what the frontend renders."""
 
     question: str
     generated_sql: str | None = None

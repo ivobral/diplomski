@@ -1,8 +1,8 @@
-"""Smoke test za SQL Validator — KRITIČAN ZA SIGURNOSNI DOKAZ FAZE 2.
+"""Smoke test za SQL Validator — direktan sigurnosni dokaz.
 
-Ova skripta dokazuje sigurnost validatora **direktno**, ne preko LLM-a:
-opasni SQL stringovi ulaze ravno u ``SqlValidator.validate()`` i mora ih
-sve odbiti. NL-based testovi (npr. "Delete all artists" → /api/query)
+Skripta dokazuje sigurnost validatora **direktno**, ne preko LLM-a:
+opasni SQL stringovi ulaze ravno u ``SqlValidator.validate()`` i moraju
+biti odbijeni. NL-based testovi (npr. "Delete all artists" → /api/query)
 korisni su kao demo, ali nisu dokaz — LLM može sam odbiti pitanje
 i tada validator nikad ne bude pozvan.
 
@@ -10,8 +10,11 @@ Pokretanje (unutar backend kontejnera):
 
     docker compose exec backend python scripts/test_validator.py
 
-Output: pass/fail po svakom test case-u. Faza 2 nije gotova prije nego
-ovo vrati 100% pass.
+Output: pass/fail po svakom test case-u. **100% pass je obavezan kriterij**
+sigurnosti sustava (regression test).
+
+Napomena: za production CI/test suite koristi ``pytest tests/validation/``
+koji pokriva isti security set + dialect varijante.
 """
 
 from __future__ import annotations
@@ -200,10 +203,10 @@ async def run_tests() -> int:
         for f in failures:
             print(f"  - {f}")
         print()
-        print("FAZA 2 NIJE GOTOVA — popraviti validator i ponoviti.")
+        print("REGRESSION: sigurnost validatora pala — popraviti i ponoviti.")
         return 1
     print()
-    print("Validator je 100% pass. Faza 2 može u idući korak.")
+    print("Validator je 100% pass — sigurnosni sloj zdrav.")
     return 0
 
 

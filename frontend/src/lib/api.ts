@@ -1,39 +1,39 @@
 /**
  * Typed fetch wrapper za backend API.
  *
- * Drži sve API pozive na jednom mjestu da:
- * - URL i shape errora budu konzistentni,
- * - dodavanje retry-a / metrika kasnije bude jedna lokacija,
- * - komponente ne paze na transport detalje.
+ * Drži sve API pozive na jednom mjestu — komponente ne moraju paziti
+ * na transport detalje, error format ili URL.
  */
 
-import type { ProvidersResponse, QueryRequest, QueryResponse } from "@/lib/types";
+import type {
+  DatabasesResponse,
+  ProvidersResponse,
+  QueryRequest,
+  QueryResponse,
+  SchemaResponse,
+} from "@/lib/types";
 
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
 
 /**
- * Generic POST kao i GET helperi koji unifikuju error handling.
- * Backend domain errore vraća kao HTTP 400 s JSON-om {error, detail}.
+ * Unificirani JSON fetch s error handling-om.
+ * Backend domain errore vraća kao HTTP 400 s JSON-om ``{error, detail}``.
  */
-async function jsonFetch<T>(
-  path: string,
-  init?: RequestInit,
-): Promise<T> {
+async function jsonFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE_URL}${path}`, {
     headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
     ...init,
   });
 
   if (!response.ok) {
-    // Pokušaj izvući backend-ov strukturirani error; fall back na status.
     let detail = `HTTP ${response.status}`;
     try {
       const body = await response.json();
       if (typeof body.detail === "string") detail = body.detail;
       else if (typeof body.error === "string") detail = body.error;
     } catch {
-      /* response nije JSON — držimo se default detail-a */
+      // response nije JSON — držimo se default detail-a
     }
     throw new Error(detail);
   }
@@ -45,6 +45,17 @@ async function jsonFetch<T>(
 
 export async function fetchProviders(): Promise<ProvidersResponse> {
   return jsonFetch<ProvidersResponse>("/api/providers");
+}
+
+export async function fetchDatabases(): Promise<DatabasesResponse> {
+  return jsonFetch<DatabasesResponse>("/api/databases");
+}
+
+export async function fetchSchema(database?: string): Promise<SchemaResponse> {
+  // Backend default is "chinook"; sending it explicitly avoids any ambiguity
+  // and lets us treat the path consistently across all databases.
+  const qs = database ? `?database=${encodeURIComponent(database)}` : "";
+  return jsonFetch<SchemaResponse>(`/api/schema${qs}`);
 }
 
 export async function executeQuery(request: QueryRequest): Promise<QueryResponse> {

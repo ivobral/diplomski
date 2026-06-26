@@ -19,13 +19,16 @@ Tijek (s mjernim točkama):
 
 from __future__ import annotations
 
+from app.core.audit import make_query_entry, write_audit_entry
 from app.core.logging import get_logger
+from app.core.timing import Timer
 from app.db.schema_inspector import SchemaInspector
 from app.llm.base import BaseLLMProvider
 from app.llm.prompts.builder import PromptBuilder
 from app.llm.prompts.strategies import get_strategy
 from app.models.query import LatencyBreakdown, QueryResponse
 from app.models.validation import ValidationResult
+from app.services.error_classifier import classify_error, max_retries_for
 from app.services.execution_service import QueryExecutor
 from app.services.retry_engine import RetryEngine
 from app.validation.validator import SqlValidator
@@ -87,29 +90,54 @@ class QueryService:
             provider=active_provider.name(),
         )
 
-        # LatencyBreakdown je mutable Pydantic model; akumuliramo vrijednosti
-        # in-place kroz pipeline. Kumulativno = uključuje retry pokušaje.
-        latency = LatencyBreakdown(llm_ms=0.0, validation_ms=0.0, execution_ms=0.0, total_ms=0.0)
+        # LatencyBreakdown is a mutable Pydantic model — accumulate in-place
+        # across the pipeline. Cumulative = includes retry attempts.
+        latency = LatencyBreakdown(
+            prompt_build_ms=0.0,
+            llm_ms=0.0,
+            validation_ms=0.0,
+            execution_ms=0.0,
+            total_ms=0.0,
+        )
 
-        # ----- Inicijalni LLM poziv ------------------------------------
-        prompt = await self._prompt_builder.build(question, strategy)
+        # ----- Prompt construction (includes schema fetch) -----
+        with Timer() as t_build:
+            prompt = await self._prompt_builder.build(question, strategy)
+        latency.prompt_build_ms = t_build.elapsed_ms
+
+        # ----- Initial LLM call -----
         llm_response = await active_provider.generate(prompt)
         latency.llm_ms = (latency.llm_ms or 0) + llm_response.latency_ms
 
         current_sql = llm_response.sql
 
-        # ----- Validacija (+ eventualni retry petlja) ------------------
-        # Strategija D je jedina koja koristi retry; A/B/C ostaju s prvim
-        # validation rezultatom (eksperimentalna metodologija — Faza 4).
+        # ----- Validation (+ optional retry loop) -----
+        # Only Strategy D uses retries — A/B/C keep their first validation
+        # result so the ablation experiment stays interpretable.
         validation = await self._timed_validate(current_sql, latency)
         retry_count = 0
 
         if strategy.code == "D":
+            # Retry budget is dynamic per error class: column/table typos
+            # get an extra attempt (~85% recovery rate), type-mismatch
+            # caps at 1 attempt (~20% rate). Re-evaluated each iteration
+            # because the error class may change after the first retry.
             while (
                 not validation.ok
-                and validation.blocked_reason is None  # NIKAD retry safety-blocked
-                and retry_count < self._retry_engine.max_attempts
+                and validation.blocked_reason is None  # never retry safety-blocked
+                and validation.errors
             ):
+                err_class = classify_error(validation.errors[0])
+                budget = max_retries_for(err_class, self._retry_engine.max_attempts)
+                if retry_count >= budget:
+                    logger.info(
+                        "retry.budget_exhausted",
+                        error_class=err_class,
+                        attempts=retry_count,
+                        budget=budget,
+                    )
+                    break
+
                 retry_count += 1
                 llm_response, _ = await self._retry_engine.attempt_correction(
                     question=question,
@@ -125,23 +153,27 @@ class QueryService:
         # ----- Završetak — odluka prema validation stanju --------------
         if validation.blocked_reason is not None:
             logger.warning("query.blocked", reason=validation.blocked_reason)
-            return self._build_blocked_response(
+            response = self._build_blocked_response(
                 question=question,
                 raw_sql=current_sql,
                 validation=validation,
                 latency=latency,
                 retry_count=retry_count,
             )
+            self._audit(response, active_provider.name(), strategy.code)
+            return response
 
         if not validation.ok:
             logger.warning("query.invalid", errors=validation.errors[:3])
-            return self._build_error_response(
+            response = self._build_error_response(
                 question=question,
                 raw_sql=current_sql,
                 validation=validation,
                 latency=latency,
                 retry_count=retry_count,
             )
+            self._audit(response, active_provider.name(), strategy.code)
+            return response
 
         # ----- Izvršavanje -------------------------------------------
         assert validation.normalized_sql is not None
@@ -149,7 +181,12 @@ class QueryService:
             exec_result = await self._executor.execute(validation.normalized_sql)
         except Exception as exc:
             logger.exception("query.execution.failed")
-            return QueryResponse(
+            latency.total_ms = (
+                (latency.prompt_build_ms or 0)
+                + (latency.llm_ms or 0)
+                + (latency.validation_ms or 0)
+            )
+            response = QueryResponse(
                 question=question,
                 generated_sql=current_sql,
                 normalized_sql=validation.normalized_sql,
@@ -159,15 +196,21 @@ class QueryService:
                 latency=latency,
                 retry_count=retry_count,
             )
+            self._audit(response, active_provider.name(), strategy.code)
+            return response
 
         latency.execution_ms = exec_result.execution_ms
         latency.total_ms = (
-            (latency.llm_ms or 0) + (latency.validation_ms or 0) + exec_result.execution_ms
+            (latency.prompt_build_ms or 0)
+            + (latency.llm_ms or 0)
+            + (latency.validation_ms or 0)
+            + exec_result.execution_ms
         )
 
         logger.info(
             "query.completed",
             rows=exec_result.row_count,
+            prompt_build_ms=latency.prompt_build_ms,
             llm_ms=latency.llm_ms,
             validation_ms=latency.validation_ms,
             execution_ms=latency.execution_ms,
@@ -175,7 +218,7 @@ class QueryService:
             retries=retry_count,
         )
 
-        return QueryResponse(
+        response = QueryResponse(
             question=question,
             generated_sql=current_sql,
             normalized_sql=validation.normalized_sql,
@@ -187,6 +230,8 @@ class QueryService:
             latency=latency,
             retry_count=retry_count,
         )
+        self._audit(response, active_provider.name(), strategy.code)
+        return response
 
     # ------------------------------------------------------------------
     # Helpers
@@ -213,7 +258,11 @@ class QueryService:
         latency: LatencyBreakdown,
         retry_count: int,
     ) -> QueryResponse:
-        latency.total_ms = (latency.llm_ms or 0) + (latency.validation_ms or 0)
+        latency.total_ms = (
+            (latency.prompt_build_ms or 0)
+            + (latency.llm_ms or 0)
+            + (latency.validation_ms or 0)
+        )
         return QueryResponse(
             question=question,
             generated_sql=raw_sql,
@@ -233,7 +282,11 @@ class QueryService:
         latency: LatencyBreakdown,
         retry_count: int,
     ) -> QueryResponse:
-        latency.total_ms = (latency.llm_ms or 0) + (latency.validation_ms or 0)
+        latency.total_ms = (
+            (latency.prompt_build_ms or 0)
+            + (latency.llm_ms or 0)
+            + (latency.validation_ms or 0)
+        )
         return QueryResponse(
             question=question,
             generated_sql=raw_sql,
@@ -244,3 +297,26 @@ class QueryService:
             latency=latency,
             retry_count=retry_count,
         )
+
+    @staticmethod
+    def _audit(response: QueryResponse, provider: str, strategy: str) -> None:
+        """Append one audit entry to the persistent JSONL trail.
+
+        Best-effort: audit write failure never breaks the request.
+        """
+
+        entry = make_query_entry(
+            question=response.question,
+            strategy=strategy,
+            provider=provider,
+            generated_sql=response.generated_sql,
+            normalized_sql=response.normalized_sql,
+            validated=response.validated,
+            executed=response.executed,
+            blocked_reason=response.blocked_reason,
+            error=response.error,
+            row_count=response.row_count,
+            retry_count=response.retry_count,
+            latency=response.latency.model_dump(),
+        )
+        write_audit_entry(entry)

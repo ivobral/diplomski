@@ -1,26 +1,45 @@
 @import "tailwindcss";
 
+/*
+ * NL2SQL frontend tema — warm light scheme.
+ *
+ * Bez dark mode override-a: aplikacija je vizualno konzistentna na svim
+ * sustavima (svjetla pozadina + topli kontrasti) jer demo cilja na
+ * preglednost tijekom prezentacije, ne korisničke postavke.
+ *
+ * Paleta:
+ *   - body bg  ``#fafaf9`` (Tailwind stone-50) — topla off-white
+ *   - cards     bijela
+ *   - borders   ``#e7e5e4`` (stone-200)
+ *   - text      ``#1c1917`` (stone-900)
+ *   - muted     ``#57534e`` (stone-600)
+ *   - accent    ``#d97706`` (amber-600) → ``#b45309`` (amber-700) hover
+ */
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  color-scheme: only light;
+  --background: #fafaf9;
+  --foreground: #1c1917;
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-geist-sans), system-ui, sans-serif;
+}
+
+/* Diskretno scrollbar oblikovanje da prati toplu paletu. */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: #d6d3d1; /* stone-300 */
+  border-radius: 8px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #a8a29e; /* stone-400 */
+}
+::-webkit-scrollbar-track {
+  background: transparent;
 }

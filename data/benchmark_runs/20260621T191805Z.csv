@@ -1,0 +1,2 @@
+provider,strategy,total,exact_match,exact_match_rate,execution_accuracy,execution_accuracy_rate,validation_success_rate,error_rate,blocked,retry_used,mean_llm_ms,mean_total_ms,total_input_tokens,total_output_tokens
+openai(openai-default),D,500,25,0.05,92,0.184,0.998,0.014,0,70,5114.21,8148.17,3526510,71021

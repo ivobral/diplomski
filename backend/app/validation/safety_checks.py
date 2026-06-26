@@ -61,6 +61,32 @@ _DENIED_NODE_TYPES: tuple[type[exp.Expression], ...] = (
 # pokaže rizik.
 _DENIED_SET_OPS: tuple[type[exp.Expression], ...] = ()
 
+# Function names blocked even inside a syntactically valid SELECT.
+# These are not DDL/DML but can:
+#   - exhaust resources  (pg_sleep, generate_series with huge bounds)
+#   - read host filesystem (pg_read_file, pg_read_binary_file)
+#   - leak environment   (current_setting('something_sensitive'))
+#   - execute code       (dblink_exec, pg_execute_server_program)
+# Lowercase-compared. SQLite has its own set (none nearly as dangerous),
+# but we apply the list to all dialects for defense in depth.
+_DENIED_FUNCTIONS: frozenset[str] = frozenset({
+    "pg_sleep",
+    "pg_read_file",
+    "pg_read_binary_file",
+    "pg_ls_dir",
+    "pg_stat_file",
+    "lo_import",
+    "lo_export",
+    "dblink",
+    "dblink_exec",
+    "pg_execute_server_program",
+    "copy",   # COPY FROM/TO file
+    # SQLite functions worth blocking:
+    "load_extension",   # arbitrary code load
+    "readfile",         # filesystem read
+    "writefile",        # filesystem write
+})
+
 
 def check_safety(ast: exp.Expression) -> list[str]:
     """Pokreće sve safety provjere i vraća listu razloga blokiranja.
@@ -99,6 +125,17 @@ def check_safety(ast: exp.Expression) -> list[str]:
             reasons.append(
                 f"Set operacija {type(node).__name__.upper()} privremeno "
                 f"nije dozvoljena (re-evaluirati u Fazi 4 evaluacije)."
+            )
+
+    # Provjera 4: opasne funkcije unutar SELECT-a (pg_sleep, pg_read_file, ...).
+    # Ovo hvata "legitimno izgleda kao SELECT" napade koji ipak imaju side-effects.
+    for func_node in ast.find_all(exp.Anonymous, exp.Func):
+        # exp.Anonymous = unknown function (sqlglot ne zna sve); exp.Func = poznata.
+        name = (func_node.name or "").lower()
+        if name in _DENIED_FUNCTIONS:
+            reasons.append(
+                f"Funkcija {name}() nije dozvoljena "
+                f"(potencijalni DoS / file system / privilege escalation)."
             )
 
     return reasons

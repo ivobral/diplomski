@@ -1,54 +1,58 @@
 /**
- * StatusBadge — vizualni indikator stanja query response-a.
+ * StatusBadge — at-a-glance indicator of the query response state.
  *
- * Tri primarna stanja (mutually exclusive prema backend logici):
- *  - executed:  validacija + izvršavanje uspjeli
- *  - blocked:   safety blokada (DDL/DML/multi-statement)
- *  - error:     parse/semantic neispravan SQL (retry iscrpljen)
+ * Three primary states (mutually exclusive per backend logic):
+ *  - executed: validation + execution succeeded → emerald (green)
+ *  - blocked:  safety block (DDL/DML/multi-statement) → rose (red)
+ *  - error:    invalid SQL from parse/semantic (retry exhausted) → amber
  */
 
 import type { QueryResponse } from "@/lib/types";
 
 export function StatusBadge({ response }: { response: QueryResponse }) {
   if (response.blocked_reason) {
+    return <Badge color="rose">Blocked · security layer</Badge>;
+  }
+  if (response.error) {
     return (
-      <Badge color="rose">
-        Blokirano — sigurnosni sloj
+      <Badge color="amber">
+        Error · {response.error.slice(0, 60)}
+        {response.error.length > 60 ? "…" : ""}
       </Badge>
     );
   }
-  if (response.error) {
-    return <Badge color="amber">Greška — {response.error.slice(0, 60)}…</Badge>;
-  }
   if (response.executed) {
-    return <Badge color="emerald">Izvršeno · {response.row_count} redaka</Badge>;
+    return (
+      <Badge color="emerald">
+        Executed · {response.row_count} {response.row_count === 1 ? "row" : "rows"}
+      </Badge>
+    );
   }
   if (response.validated) {
-    return <Badge color="sky">Validirano (nije izvršeno)</Badge>;
+    return <Badge color="sky">Validated (not executed)</Badge>;
   }
-  return <Badge color="zinc">Nepoznato stanje</Badge>;
+  return <Badge color="stone">Unknown state</Badge>;
 }
 
 function Badge({
   color,
   children,
 }: {
-  color: "emerald" | "rose" | "amber" | "sky" | "zinc";
+  color: "emerald" | "rose" | "amber" | "sky" | "stone";
   children: React.ReactNode;
 }) {
-  // Tailwind ne pretražuje dinamičke klase, pa eksplicitno mapiramo.
-  // Razlog: `bg-${color}-100` u source-u ne bi bilo detektirano u purge-u.
+  // Tailwind doesn't track dynamic class names, so we map explicitly.
   const colorMap = {
-    emerald: "bg-emerald-100 text-emerald-900 dark:bg-emerald-950 dark:text-emerald-300",
-    rose: "bg-rose-100 text-rose-900 dark:bg-rose-950 dark:text-rose-300",
-    amber: "bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-300",
-    sky: "bg-sky-100 text-sky-900 dark:bg-sky-950 dark:text-sky-300",
-    zinc: "bg-zinc-100 text-zinc-900 dark:bg-zinc-900 dark:text-zinc-300",
+    emerald: "bg-emerald-50 text-emerald-800 border-emerald-200",
+    rose: "bg-rose-50 text-rose-800 border-rose-200",
+    amber: "bg-amber-50 text-amber-800 border-amber-200",
+    sky: "bg-sky-50 text-sky-800 border-sky-200",
+    stone: "bg-stone-50 text-stone-700 border-stone-200",
   } as const;
 
   return (
     <span
-      className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${colorMap[color]}`}
+      className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium border ${colorMap[color]}`}
     >
       {children}
     </span>

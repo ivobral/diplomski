@@ -1,9 +1,9 @@
 /**
- * ErrorPanel — prikaz blocked_reason ili error poruke iz response-a.
+ * ErrorPanel — display blocked_reason or error message from the response.
  *
- * Razdvojen od StatusBadge-a (koji daje kratak signal) jer treba prostora
- * za potencijalno duge poruke validatora (npr. nepostojeća kolona +
- * lista dostupnih). Ne renderira se ako nema greške.
+ * Kept separate from StatusBadge (which is a short signal) because
+ * validator messages can be long (e.g. a list of available columns
+ * as suggestions). Does not render when there is no error.
  */
 
 import type { QueryResponse } from "@/lib/types";
@@ -13,19 +13,22 @@ export function ErrorPanel({ response }: { response: QueryResponse }) {
 
   const isBlocked = Boolean(response.blocked_reason);
   const message = response.blocked_reason ?? response.error ?? "";
-  const title = isBlocked ? "Sigurnosna blokada" : "Greška validacije";
-  const colorClasses = isBlocked
-    ? "border-rose-300 bg-rose-50 dark:border-rose-800 dark:bg-rose-950/40"
-    : "border-amber-300 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/40";
+  const title = isBlocked ? "Security block" : "Validation error";
+  const hint = isBlocked
+    ? "The validator refused to execute this SQL because it is not pure SELECT (e.g. DROP, DELETE, INSERT, or multi-statement). This is the intended behaviour of the security layer."
+    : "The generated SQL failed parsing or semantic checks. Try rephrasing your question.";
+
+  const containerCls = isBlocked
+    ? "border-rose-200 bg-rose-50"
+    : "border-orange-200 bg-orange-50";
 
   return (
-    <div className={`rounded-lg border p-4 ${colorClasses}`}>
-      <div className="text-sm font-semibold text-zinc-900 dark:text-zinc-100 mb-2">
-        {title}
-      </div>
-      <p className="text-sm text-zinc-700 dark:text-zinc-300 whitespace-pre-wrap break-words">
+    <div className={`rounded-lg border p-4 ${containerCls}`}>
+      <div className="text-sm font-semibold text-stone-900 mb-1.5">{title}</div>
+      <p className="text-sm text-stone-700 whitespace-pre-wrap break-words font-mono">
         {message}
       </p>
+      <p className="mt-2 text-xs text-stone-600">{hint}</p>
     </div>
   );
 }

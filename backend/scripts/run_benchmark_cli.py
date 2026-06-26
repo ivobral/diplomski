@@ -352,6 +352,7 @@ async def main(args: argparse.Namespace) -> int:
             "blocked", "retry_used",
             "mean_llm_ms", "mean_total_ms",
             "total_input_tokens", "total_output_tokens",
+            "total_cost_usd", "mean_cost_usd",
         ])
         for agg in payload["aggregates"]:
             writer.writerow([
@@ -362,6 +363,7 @@ async def main(args: argparse.Namespace) -> int:
                 agg["blocked"], agg["retry_used"],
                 agg["mean_llm_ms"], agg["mean_total_ms"],
                 agg["total_input_tokens"], agg["total_output_tokens"],
+                agg.get("total_cost_usd", 0.0), agg.get("mean_cost_usd", 0.0),
             ])
     print(f"CSV:  {csv_path}")
 
@@ -374,7 +376,11 @@ async def main(args: argparse.Namespace) -> int:
         print(f"    Execution Accuracy: {agg['execution_accuracy_rate']*100:5.1f}%  ({agg['execution_accuracy']}/{agg['total']})")
         print(f"    Exact Match:        {agg['exact_match_rate']*100:5.1f}%  ({agg['exact_match']}/{agg['total']})")
         print(f"    Validation Success: {agg['validation_success_rate']*100:5.1f}%")
-        print(f"    Mean total: {agg['mean_total_ms']:.0f} ms")
+        print(f"    Mean total:         {agg['mean_total_ms']:.0f} ms")
+        total_cost = agg.get("total_cost_usd", 0.0)
+        mean_cost = agg.get("mean_cost_usd", 0.0)
+        if total_cost:
+            print(f"    Cost:               ${total_cost:.4f} total  ({mean_cost*1000:.2f} ¢/Q mean)")
         print()
 
     if payload["security"]:

@@ -170,7 +170,17 @@ Database schema (tables, columns, and relations):
 
 Question: {question}
 
-Generate the SQL:"""
+Think step by step BRIEFLY inside <plan></plan> (1-3 short lines), then write the SQL.
+
+Format example:
+<plan>
+- need artist + album tables
+- JOIN on artist_id, GROUP BY name
+- count albums, ORDER DESC, LIMIT 5
+</plan>
+SELECT a.name, COUNT(*) ...
+
+Now your turn — generate <plan> + SQL:"""
 
 
 # Evidence — koristi se isključivo u Strategiji D s BIRD pitanjima.
@@ -187,7 +197,18 @@ Expert hint (use this to understand the question's intent):
 
 Question: {question}
 
-Generate the SQL:"""
+Think step by step BRIEFLY inside <plan></plan> (1-3 short lines), then write the SQL.
+Use the expert hint to ground your plan in the right columns / formulas.
+
+Format example:
+<plan>
+- hint maps "eligible free rate" to Free Meal Count / Enrollment
+- need MAX over schools with SAT excellence > 0.3
+- JOIN frpm + satscores on CDSCode
+</plan>
+SELECT MAX(...) ...
+
+Now your turn — generate <plan> + SQL:"""
 
 
 # Najobogaćeniji template — uključuje i decomposition steps generirane
@@ -283,6 +304,15 @@ def format_schema_for_prompt(
                     desc = f"  -- {desc_text}"
 
             lines.append(f"  - {col.name} {col.data_type}{marker_str}{desc}")
+
+            # Categorical values — full enum-like list for low-cardinality
+            # text columns. Direct fix for the most frequent LLM mistake:
+            # writing a WHERE filter with a value that doesn't exist in
+            # the data (e.g. WHERE country='USA' vs 'United States').
+            # Skipped when the column is high-cardinality (empty tuple).
+            if col.categorical_values:
+                quoted = ", ".join(repr(v) for v in col.categorical_values)
+                lines.append(f"      values: {quoted}")
 
         # FK relacije — samo ako su tražene (strategije C i D).
         if include_relations and table.foreign_keys:

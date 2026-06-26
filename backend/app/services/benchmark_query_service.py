@@ -19,7 +19,7 @@ Workflow per pitanje:
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -86,10 +86,12 @@ class BenchmarkQuestionResult:
     total_ms: float
     input_tokens: int | None
     output_tokens: int | None
+    # $ cost per question (None if model not in pricing table).
+    cost_usd: float | None = None
 
     # Rezultat izvršavanja (potrebno za execution accuracy usporedbu s gold)
-    predicted_columns: list[str]
-    predicted_rows: list[list[Any]]
+    predicted_columns: list[str] = field(default_factory=list)
+    predicted_rows: list[list[Any]] = field(default_factory=list)
 
 
 class BenchmarkQueryService:
@@ -673,6 +675,13 @@ class BenchmarkQueryService:
                     executed = False
 
         total_ms = llm_ms + validation_ms + execution_ms
+        # Compute $ cost from token counts + model rate-card.
+        # Provider exposes `_model` (set in each concrete provider) — using
+        # a private attr is intentional, no public ``model`` on the ABC.
+        from app.core.pricing import estimate_cost_usd
+        model_name = getattr(provider, "_model", "")
+        cost_usd = estimate_cost_usd(model_name, input_tokens, output_tokens)
+
         result = BenchmarkQuestionResult(
             question_id=question.question_id,
             db_id=question.db_id,
@@ -694,6 +703,7 @@ class BenchmarkQueryService:
             total_ms=total_ms,
             input_tokens=input_tokens,
             output_tokens=output_tokens,
+            cost_usd=cost_usd,
             predicted_columns=predicted_columns,
             predicted_rows=predicted_rows,
         )

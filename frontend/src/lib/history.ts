@@ -1,22 +1,19 @@
 /**
  * Lokalno spremište povijesti pitanja (localStorage).
  *
- * Zašto localStorage a ne backend storage:
- * - per-user history bez auth-a (svaki browser drži svoju listu),
- * - bez backend share-anog state-a (pojednostavljuje arhitekturu),
- * - rad off-line.
- *
- * Format: lista zadnjih ~10 unosa, najnoviji prvi.
+ * Drži zadnjih 10 pitanja u browser-u — bez backend ovisnosti. Razlozi:
+ * - per-user history bez auth-a (svaki browser svoja lista),
+ * - radi off-line,
+ * - jednostavna arhitektura (bez DB persistence sloja).
  */
 
-import type { ProviderName, StrategyCode } from "@/lib/types";
+import type { StrategyCode } from "@/lib/types";
 
-const STORAGE_KEY = "nl2sql.history.v1";
+const STORAGE_KEY = "nl2sql.history.v2";
 const MAX_ENTRIES = 10;
 
 export interface HistoryEntry {
   question: string;
-  provider?: ProviderName;
   strategy?: StrategyCode;
   /** ISO timestamp — za sortiranje i prikaz "prije 5 minuta". */
   timestamp: string;
@@ -38,8 +35,8 @@ export function loadHistory(): HistoryEntry[] {
 }
 
 /**
- * Dodaj novi unos. Ako identičan (ista question + provider + strategy)
- * već postoji, podigni ga na vrh umjesto duplikata.
+ * Dodaj novi unos. Ako identičan (ista question + strategy) već postoji,
+ * podigni ga na vrh umjesto duplikata.
  */
 export function appendHistory(entry: Omit<HistoryEntry, "timestamp">): HistoryEntry[] {
   if (typeof window === "undefined") return [];
@@ -48,10 +45,7 @@ export function appendHistory(entry: Omit<HistoryEntry, "timestamp">): HistoryEn
   const existing = loadHistory();
 
   const deduped = existing.filter(
-    (e) =>
-      e.question !== now.question ||
-      e.provider !== now.provider ||
-      e.strategy !== now.strategy,
+    (e) => e.question !== now.question || e.strategy !== now.strategy,
   );
 
   const next = [now, ...deduped].slice(0, MAX_ENTRIES);

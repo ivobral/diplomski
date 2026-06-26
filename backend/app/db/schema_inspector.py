@@ -1,18 +1,4 @@
-"""Dinamički dohvat sheme baze.
-
-Sustav NIKAD ne smije imati hardcoded shemu — pitanje korisnika u Fazi 2
-prevodi se u SQL koji koristi tablice i kolone iz STVARNE baze. Zato ovaj
-modul nudi:
-
-- popis tablica (s primary key-evima),
-- popis kolona po tablici (s tipovima),
-- relacije (foreign keys) između tablica.
-
-Implementacijska bilješka: SQLAlchemy ``inspect()`` API radi nad sync
-engine-om, pa ga pozivamo unutar ``run_sync()`` mosta koji ga izvršava
-u kontekstu async engine-a. Rezultat keširamo s TTL-om jer schema introspection
-nije besplatna i shema se rijetko mijenja tijekom rada aplikacije.
-"""
+"""Dinamički dohvat sheme baze."""
 
 from __future__ import annotations
 
@@ -31,27 +17,17 @@ from app.core.logging import get_logger
 logger = get_logger(__name__)
 
 
-# ----------------------------------------------------------------------
-# Data classes — namjerno koristimo dataclass umjesto Pydantic-a ovdje,
-# jer ovo su interni modeli (ne idu direktno preko API-ja). Pydantic DTO-i
-# za API leže u app/models/schema.py.
-# ----------------------------------------------------------------------
-
-
 @dataclass(frozen=True, slots=True)
 class ColumnInfo:
-    """Jedna kolona u tablici."""
-
     name: str
     data_type: str
     nullable: bool
     is_primary_key: bool
+    categorical_values: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
 class ForeignKeyInfo:
-    """Foreign key veza — koji stupci ove tablice referenciraju koje stupce druge."""
-
     constrained_columns: tuple[str, ...]
     referred_table: str
     referred_columns: tuple[str, ...]
@@ -59,21 +35,14 @@ class ForeignKeyInfo:
 
 @dataclass(frozen=True, slots=True)
 class TableInfo:
-    """Cjelovita informacija o jednoj tablici."""
-
     name: str
     columns: tuple[ColumnInfo, ...]
     foreign_keys: tuple[ForeignKeyInfo, ...]
-    # Sample redovi za prompt context — opcionalni. Prazan tuple = nije fetched.
-    # Pomaže LLM-u s case-sensitive value matching, raspodjelom NULL-ova,
-    # primjenama formatima datuma itd. Tipično 3 retka po tablici.
     sample_rows: tuple[tuple[Any, ...], ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
 class DatabaseSchema:
-    """Snapshot cijele sheme baze u jednoj točki u vremenu."""
-
     tables: tuple[TableInfo, ...]
     fetched_at: float = field(default_factory=time.time)
 
@@ -81,8 +50,6 @@ class DatabaseSchema:
         return [t.name for t in self.tables]
 
     def find_table(self, name: str) -> TableInfo | None:
-        """Lookup po imenu, case-insensitive (PostgreSQL identifikatori su lowercase)."""
-
         lower = name.lower()
         for t in self.tables:
             if t.name.lower() == lower:
@@ -96,39 +63,12 @@ class DatabaseSchema:
 
 
 class SchemaInspector:
-    """Dohvaća i keširi shemu baze.
-
-    Cache je in-memory s TTL-om iz ``settings.SCHEMA_CACHE_TTL_SECONDS``.
-    Razlog: schema introspection radi nekoliko round-tripova prema bazi,
-    a shema se rijetko mijenja — keširanje smanjuje latenciju pojedinih
-    upita za 50-200ms (mjereno empirijski).
-    """
-
     def __init__(self, engine: AsyncEngine, cache_ttl_seconds: int | None = None) -> None:
         self._engine = engine
         self._ttl = cache_ttl_seconds if cache_ttl_seconds is not None else settings.SCHEMA_CACHE_TTL_SECONDS
         self._cached: DatabaseSchema | None = None
 
-    async def get_schema(
-        self,
-        force_refresh: bool = False,
-        include_sample_rows: bool = False,
-    ) -> DatabaseSchema:
-        """Vraća trenutnu shemu, koristeći cache ako je svjež.
-
-        Args:
-            force_refresh: Ignoriraj cache i dohvati shemu iznova.
-            include_sample_rows: ako True, fetch 3 sample retka po tablici.
-                Korisno u benchmark mode-u da LLM može vidjeti stvarne
-                vrijednosti (case sensitivity, format datuma, distribucija
-                NULL-ova). Default False radi cijene cache-a.
-
-        Raises:
-            SchemaInspectionError: Ako introspection ne uspije.
-        """
-
-        # Cache nikad ne vraća verziju sa sample rows jer su one velike i
-        # mogu se mijenjati. Sample-row varijantu uvijek freshly dohvaćamo.
+    async def get_schema(self, force_refresh: bool = False, include_sample_rows: bool = False) -> DatabaseSchema:
         if not include_sample_rows and not force_refresh and self._cached is not None:
             age = time.time() - self._cached.fetched_at
             if age < self._ttl:
@@ -136,65 +76,52 @@ class SchemaInspector:
 
         try:
             schema = await self._fetch_schema(include_sample_rows=include_sample_rows)
-        except Exception as exc:  # noqa: BLE001 — wrap u domain exception
+        except Exception as exc:
             logger.exception("schema.inspect.failed")
             raise SchemaInspectionError(f"Neuspjeh pri dohvatu sheme: {exc}") from exc
 
-        # Cache-iramo samo verziju BEZ sample rows-a (manja, dijeli se
-        # između demo i ostalih scenarija). Verziju s sample-om dohvaćamo
-        # fresh svaki put — pretpostavlja se da je benchmark per-DB.
         if not include_sample_rows:
             self._cached = schema
         logger.info("schema.fetched", table_count=len(schema.tables), samples=include_sample_rows)
         return schema
 
     async def _fetch_schema(self, include_sample_rows: bool = False) -> DatabaseSchema:
-        """Stvarni introspection — radi se sync API SQLAlchemy-ja preko run_sync mosta."""
-
-        # SQLAlchemy ``inspect()`` je sinkroni API; async engine pruža `connect()`
-        # i `run_sync(fn)` pomoću kojeg ga zovemo unutar event loop-a, bez
-        # blokiranja drugih corutine-a.
         async with self._engine.connect() as conn:
-            tables = await conn.run_sync(
-                lambda sync_conn: _extract_tables(sync_conn, include_sample_rows=include_sample_rows)
-            )
+            tables = await conn.run_sync(lambda sync_conn: _extract_tables(sync_conn, include_sample_rows=include_sample_rows))
 
         return DatabaseSchema(tables=tuple(tables))
 
 
+SAMPLE_ROW_LIMIT = 5
+MAX_CATEGORICAL_VALUES = 30
+
+
 def _extract_tables(sync_conn, include_sample_rows: bool = False) -> list[TableInfo]:
-    """Sinkrona funkcija koja se izvršava unutar run_sync — ekstrahira sve tablice.
-
-    Razdvojena je iz ``SchemaInspector`` klase jer ``run_sync`` očekuje
-    plain callable. Drži se na razini modula da je čitljivo i testabilno.
-
-    Ako ``include_sample_rows=True``, fetcha SELECT * FROM <t> LIMIT 3 za
-    svaku tablicu da LLM dobiva pravi pogled na podatke (case sensitivity,
-    format vrijednosti, NULL distribucija).
-    """
-
     inspector: Inspector = inspect(sync_conn)
     result: list[TableInfo] = []
 
-    # Default schema u PostgreSQL-u je `public`; eksplicitno je tražimo da
-    # izbjegnemo `pg_catalog` i `information_schema` interne tablice.
-    # SQLite, suprotno, NEMA schema concept — ako pošaljemo `schema="public"`
-    # SQLAlchemy pokuša `public.sqlite_master` što ne postoji. Detect dialect
-    # iz konekcije i pass `None` za SQLite (znači "default schema").
-    dialect_name = sync_conn.dialect.name  # 'postgresql', 'sqlite', 'mysql', …
+    dialect_name = sync_conn.dialect.name
     schema_name: str | None = "public" if dialect_name == "postgresql" else None
 
     for table_name in inspector.get_table_names(schema=schema_name):
         pk_cols = set(inspector.get_pk_constraint(table_name, schema=schema_name).get("constrained_columns") or [])
 
+        # First pass: build columns with empty categorical_values.
+        raw_columns = list(inspector.get_columns(table_name, schema=schema_name))
         columns: list[ColumnInfo] = []
-        for col in inspector.get_columns(table_name, schema=schema_name):
+        for col in raw_columns:
+            categorical: tuple[str, ...] = ()
+            if include_sample_rows and _looks_like_text_column(str(col["type"])):
+                categorical = _fetch_distinct_values(
+                    sync_conn, table_name, col["name"]
+                )
             columns.append(
                 ColumnInfo(
                     name=col["name"],
                     data_type=str(col["type"]),
                     nullable=bool(col.get("nullable", True)),
                     is_primary_key=col["name"] in pk_cols,
+                    categorical_values=categorical,
                 )
             )
 
@@ -210,18 +137,7 @@ def _extract_tables(sync_conn, include_sample_rows: bool = False) -> list[TableI
 
         sample_rows: tuple[tuple[Any, ...], ...] = ()
         if include_sample_rows:
-            # Quoted identifier — neka BIRD imena tablica imaju razmake
-            # ili neobične znakove. SQLite koristi "" (kao i Postgres).
-            quoted = f'"{table_name}"'
-            try:
-                rows = sync_conn.execute(text(f"SELECT * FROM {quoted} LIMIT 3")).fetchall()
-                sample_rows = tuple(
-                    tuple(_truncate_cell(cell) for cell in r) for r in rows
-                )
-            except Exception:
-                # Tihi fallback: ako sample fetch padne (npr. permission),
-                # ne rušimo cijeli introspection — samo izostavimo samples.
-                sample_rows = ()
+            sample_rows = _fetch_sample_rows(sync_conn, table_name, pk_cols)
 
         result.append(
             TableInfo(
@@ -235,12 +151,49 @@ def _extract_tables(sync_conn, include_sample_rows: bool = False) -> list[TableI
     return result
 
 
+def _looks_like_text_column(data_type: str) -> bool:
+    upper = data_type.upper()
+    return any(token in upper for token in ("CHAR", "TEXT", "VARCHAR", "STRING"))
+
+
+def _fetch_distinct_values(
+    sync_conn, table_name: str, column_name: str
+) -> tuple[str, ...]:
+    qt = f'"{table_name}"'
+    qc = f'"{column_name}"'
+    try:
+        rows = sync_conn.execute(
+            text(f"SELECT DISTINCT {qc} FROM {qt} WHERE {qc} IS NOT NULL LIMIT :n"),
+            {"n": MAX_CATEGORICAL_VALUES + 1},
+        ).fetchall()
+    except Exception:
+        return ()
+    if len(rows) > MAX_CATEGORICAL_VALUES:
+        return ()
+    return tuple(str(r[0]) for r in rows)
+
+
+def _fetch_sample_rows(sync_conn, table_name: str, pk_cols: set[str]) -> tuple[tuple[Any, ...], ...]:
+    qt = f'"{table_name}"'
+    order_clause = ""
+    if pk_cols:
+        first_pk = sorted(pk_cols)[0]
+        order_clause = f' ORDER BY "{first_pk}" DESC'
+    try:
+        rows = sync_conn.execute(
+            text(f"SELECT * FROM {qt}{order_clause} LIMIT {SAMPLE_ROW_LIMIT}")
+        ).fetchall()
+    except Exception:  # noqa: BLE001 — fall back to unordered sample
+        try:
+            rows = sync_conn.execute(
+                text(f"SELECT * FROM {qt} LIMIT {SAMPLE_ROW_LIMIT}")
+            ).fetchall()
+        except Exception:
+            return ()
+    return tuple(tuple(_truncate_cell(cell) for cell in r) for r in rows)
+
+
 def _truncate_cell(value: Any, max_chars: int = 60) -> Any:
-    """Obreže dugačke string vrijednosti da prompt ne ekspolodira.
-
-    Ostavlja non-string vrijednosti (int/float/None) netaknute.
-    """
-
     if isinstance(value, str) and len(value) > max_chars:
         return value[: max_chars - 1] + "…"
     return value

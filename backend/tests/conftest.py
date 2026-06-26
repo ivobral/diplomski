@@ -141,6 +141,21 @@ class _StubInspector:
 
 
 @pytest.fixture
+def stub_inspector():
+    """Factory fixture — vraća konstruktor za ``_StubInspector(schema)``.
+
+    Koristi se kroz pytest's fixture mehanizam umjesto direktnog importa
+    da ``tests/`` direktorij ne mora biti Python paket (bez ``__init__.py``).
+    Primjer:
+
+        def test_x(stub_inspector, chinook_schema):
+            inspector = stub_inspector(chinook_schema)
+    """
+
+    return _StubInspector
+
+
+@pytest.fixture
 def pg_validator(chinook_schema: DatabaseSchema) -> SqlValidator:
     """Validator s Postgres dialect-om — production default za Chinook demo."""
 

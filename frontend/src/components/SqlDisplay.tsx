@@ -1,18 +1,19 @@
 /**
  * SqlDisplay — sintaksno-obojan prikaz generiranog SQL-a.
  *
- * Pokazuje dvije verzije:
- *  - "Generated" — sirovi LLM output (može biti compact, bez LIMIT-a)
- *  - "Normalized" — pretty-print iz validatora + auto-LIMIT
+ * Pokazuje dvije verzije s toggle:
+ *  - "Normalized" — pretty-print iz validatora + auto-LIMIT (ono što se
+ *    zaista izvršilo nad bazom)
+ *  - "Generated (raw)" — sirovi LLM output (može biti kompaktan, bez LIMIT-a)
  *
- * Toggle između dviju verzija je vrlo koristan za diplomski demo —
- * pokazuje što validator točno radi s output-om.
+ * Toggle je koristan za demo: pokazuje što validator zapravo radi s
+ * output-om LLM-a (cleanup + LIMIT enforcement).
  */
 "use client";
 
 import { useEffect, useState } from "react";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
-import { oneDark, oneLight } from "react-syntax-highlighter/dist/esm/styles/prism";
+import { oneLight } from "react-syntax-highlighter/dist/esm/styles/prism";
 
 import { CopyButton } from "./CopyButton";
 
@@ -26,43 +27,38 @@ type View = "normalized" | "generated";
 export function SqlDisplay({ generated, normalized }: Props) {
   const hasNormalized = Boolean(normalized);
 
-  // Default view: normalized ako postoji (pretty-print + auto-LIMIT je to
-  // što je stvarno izvršeno), inače fallback na generated (slučaj blokade —
-  // validator nije izračunao normalized, ali korisnik mora vidjeti što je
-  // LLM generirao).
+  // Default view: normalized ako postoji. Razlog: to je SQL koji je
+  // stvarno izvršen (s auto-LIMIT-om). Fallback na generated samo kad
+  // validator nije izračunao normalized (npr. blokirano DDL-om).
   const [view, setView] = useState<View>(hasNormalized ? "normalized" : "generated");
 
-  // Re-sync default kad response stigne s novom shape-om (npr. nakon
-  // prelaska iz blokirane → izvršene). Bez ovoga, view bi ostao zaglavljen
-  // u "generated" kad korisnik šalje sljedeći uspješan upit.
+  // Re-sync default kad stigne novi response s drugačijim stanjem.
   useEffect(() => {
     setView(hasNormalized ? "normalized" : "generated");
   }, [hasNormalized, generated]);
 
   const currentSql = (view === "normalized" ? normalized : generated) ?? "";
 
-  // react-syntax-highlighter Prism radi vrlo dobro u prefers-color-scheme
-  // dark, ali stil moramo izabrati eksplicitno. Provjeravamo media query
-  // jednostavno preko `prefers-color-scheme` u CSS-u (Tailwind dark:).
-  // Ovdje koristimo `oneLight` kao default jer chart ide u dark mode kroz
-  // CSS dark: prefiks — biblioteke pružaju inline-stil pa to izolira
-  // dark mode na sam highlighter container.
-
   return (
-    <div className="rounded-lg border border-zinc-200 dark:border-zinc-800 overflow-hidden">
-      <div className="flex items-center justify-between px-4 py-2 bg-zinc-50 dark:bg-zinc-900 border-b border-zinc-200 dark:border-zinc-800">
+    <div className="rounded-lg border border-stone-200 bg-white overflow-hidden">
+      <div className="flex items-center justify-between px-4 py-2 bg-amber-50 border-b border-amber-100">
         <div className="flex items-center gap-1">
           <ViewTab
             active={view === "normalized"}
             disabled={!hasNormalized}
             onClick={() => setView("normalized")}
-            title={hasNormalized ? "" : "Validacija nije prošla — nema normaliziranog SQL-a"}
+            title={
+              hasNormalized
+                ? "Pretty-printed + auto-LIMIT from the validator (this is what actually ran)"
+                : "Validation failed — no normalized SQL is available"
+            }
           >
             Normalized
           </ViewTab>
           <ViewTab
             active={view === "generated"}
             onClick={() => setView("generated")}
+            title="Raw SQL as produced by the LLM, before validator cleanup"
           >
             Generated (raw)
           </ViewTab>
@@ -72,30 +68,20 @@ export function SqlDisplay({ generated, normalized }: Props) {
 
       <div className="text-sm">
         {currentSql ? (
-          <>
-            {/* Light theme — show only when user has light scheme */}
-            <div className="dark:hidden">
-              <SyntaxHighlighter
-                language="sql"
-                style={oneLight}
-                customStyle={{ margin: 0, padding: "1rem", background: "transparent" }}
-              >
-                {currentSql}
-              </SyntaxHighlighter>
-            </div>
-            {/* Dark theme — show only when user has dark scheme */}
-            <div className="hidden dark:block">
-              <SyntaxHighlighter
-                language="sql"
-                style={oneDark}
-                customStyle={{ margin: 0, padding: "1rem", background: "transparent" }}
-              >
-                {currentSql}
-              </SyntaxHighlighter>
-            </div>
-          </>
+          <SyntaxHighlighter
+            language="sql"
+            style={oneLight}
+            customStyle={{
+              margin: 0,
+              padding: "1rem",
+              background: "transparent",
+              fontSize: "0.85rem",
+            }}
+          >
+            {currentSql}
+          </SyntaxHighlighter>
         ) : (
-          <div className="p-4 text-zinc-500 italic">— nema SQL-a —</div>
+          <div className="p-4 text-stone-500 italic">— no SQL —</div>
         )}
       </div>
     </div>
@@ -123,8 +109,8 @@ function ViewTab({
       title={title}
       className={`text-xs px-3 py-1 rounded-md transition-colors ${
         active
-          ? "bg-zinc-200 dark:bg-zinc-700 text-zinc-900 dark:text-zinc-100"
-          : "text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800"
+          ? "bg-amber-200 text-amber-900"
+          : "text-stone-700 hover:bg-amber-100"
       } disabled:opacity-40 disabled:cursor-not-allowed`}
     >
       {children}

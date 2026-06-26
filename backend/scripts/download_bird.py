@@ -2,9 +2,9 @@
 
 BIRD Mini-Dev (500 pitanja s SQLite, MySQL, i PostgreSQL gold SQL-om) je
 standardni subset BIRD benchmark-a koji se koristi za brže iteracije.
-Koristi se isključivo SQLite varijanta jer naša filozofija (vidi plan,
-Faza 4) je da gold SQL ostaje u originalnom dialect-u za metodološku
-čistoću rezultata.
+Koristi se isključivo SQLite varijanta — gold SQL ostaje u originalnom
+dialect-u za metodološku čistoću rezultata (usporedivost s literaturom
+poput DAIL-SQL, DIN-SQL koje također koriste SQLite).
 
 Pokretanje (unutar backend kontejnera, jednokratno):
 

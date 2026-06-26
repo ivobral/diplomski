@@ -49,6 +49,10 @@ class GroupAggregates:
     total_execution_ms: float = 0.0
     total_input_tokens: int = 0
     total_output_tokens: int = 0
+    # Total $ cost across all questions in this group (when pricing known).
+    total_cost_usd: float = 0.0
+    # Count of questions for which cost was computed (model in pricing table).
+    cost_known_count: int = 0
     # Po difficulty
     by_difficulty: dict[str, dict[str, int]] = field(default_factory=lambda: defaultdict(lambda: defaultdict(int)))
 
@@ -78,6 +82,15 @@ class GroupAggregates:
             (self.total_llm_ms + self.total_validation_ms + self.total_execution_ms)
             / self.total
         ) if self.total else 0.0
+
+    @property
+    def mean_cost_usd(self) -> float:
+        """Mean $ per question for which cost was computable."""
+
+        return (
+            self.total_cost_usd / self.cost_known_count
+            if self.cost_known_count else 0.0
+        )
 
 
 def compute_metrics(
@@ -110,6 +123,9 @@ def compute_metrics(
         agg.total_execution_ms += r.execution_ms
         agg.total_input_tokens += r.input_tokens or 0
         agg.total_output_tokens += r.output_tokens or 0
+        if r.cost_usd is not None:
+            agg.total_cost_usd += r.cost_usd
+            agg.cost_known_count += 1
         if r.retry_count > 0:
             agg.retry_used += 1
 
@@ -186,5 +202,7 @@ def aggregates_to_dict(agg: GroupAggregates) -> dict[str, Any]:
         "mean_total_ms": round(agg.mean_total_ms, 2),
         "total_input_tokens": agg.total_input_tokens,
         "total_output_tokens": agg.total_output_tokens,
+        "total_cost_usd": round(agg.total_cost_usd, 4),
+        "mean_cost_usd": round(agg.mean_cost_usd, 6),
         "by_difficulty": {k: dict(v) for k, v in agg.by_difficulty.items()},
     }

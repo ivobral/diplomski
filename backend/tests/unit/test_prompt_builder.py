@@ -10,16 +10,15 @@ from __future__ import annotations
 from app.db.schema_inspector import DatabaseSchema
 from app.llm.prompts.builder import PromptBuilder
 from app.llm.prompts.strategies import get_strategy
-from tests.conftest import _StubInspector
 
 
 class TestStrategies:
     """Każde strategija stavlja samo svoju razinu informacija u prompt."""
 
-    async def test_strategy_a_minimal(self, chinook_schema: DatabaseSchema) -> None:
+    async def test_strategy_a_minimal(self, stub_inspector, chinook_schema: DatabaseSchema) -> None:
         """A — samo pitanje, bez sheme."""
 
-        builder = PromptBuilder(schema_inspector=_StubInspector(chinook_schema))
+        builder = PromptBuilder(schema_inspector=stub_inspector(chinook_schema))
         strategy = get_strategy("A")
         prompt = await builder.build(question="How many artists?", strategy=strategy)
 
@@ -27,29 +26,29 @@ class TestStrategies:
         # A ne smije sadržavati ime tablice (jer nema sheme)
         assert "artist" not in prompt.user.lower() or "artists?" in prompt.user.lower()
 
-    async def test_strategy_b_includes_schema(self, chinook_schema: DatabaseSchema) -> None:
+    async def test_strategy_b_includes_schema(self, stub_inspector, chinook_schema: DatabaseSchema) -> None:
         """B — pitanje + schema."""
 
-        builder = PromptBuilder(schema_inspector=_StubInspector(chinook_schema))
+        builder = PromptBuilder(schema_inspector=stub_inspector(chinook_schema))
         prompt = await builder.build(question="How many artists?", strategy=get_strategy("B"))
 
         assert "How many artists?" in prompt.user
         assert "artist" in prompt.user.lower()  # schema je tu
 
-    async def test_strategy_c_includes_relations(self, chinook_schema: DatabaseSchema) -> None:
+    async def test_strategy_c_includes_relations(self, stub_inspector, chinook_schema: DatabaseSchema) -> None:
         """C — pitanje + schema + relations."""
 
-        builder = PromptBuilder(schema_inspector=_StubInspector(chinook_schema))
+        builder = PromptBuilder(schema_inspector=stub_inspector(chinook_schema))
         prompt = await builder.build(question="Top selling artists?", strategy=get_strategy("C"))
 
         # C prompt sadrži schema + neki indicator relacija (FK info)
         assert "artist" in prompt.user.lower()
         assert "album" in prompt.user.lower()
 
-    async def test_strategy_d_full(self, chinook_schema: DatabaseSchema) -> None:
+    async def test_strategy_d_full(self, stub_inspector, chinook_schema: DatabaseSchema) -> None:
         """D — sve gore + evidence + decomposition prosljeđuje se ako je dato."""
 
-        builder = PromptBuilder(schema_inspector=_StubInspector(chinook_schema))
+        builder = PromptBuilder(schema_inspector=stub_inspector(chinook_schema))
         prompt = await builder.build(
             question="How many artists?",
             strategy=get_strategy("D"),
@@ -65,10 +64,10 @@ class TestSchemaOverride:
     """schema_override zaobilazi inspector — koristi se u benchmark-u per db_id."""
 
     async def test_override_used_instead_of_inspector(
-        self, chinook_schema: DatabaseSchema
+        self, stub_inspector, chinook_schema: DatabaseSchema
     ) -> None:
         # Inspector ima drugu shemu, schema_override ima Chinook
-        empty_inspector = _StubInspector(DatabaseSchema(tables=()))
+        empty_inspector = stub_inspector(DatabaseSchema(tables=()))
         builder = PromptBuilder(schema_inspector=empty_inspector)
 
         prompt = await builder.build(
@@ -83,18 +82,18 @@ class TestSchemaOverride:
 class TestDialect:
     """Dialect propagacija u system prompt."""
 
-    async def test_postgres_default(self, chinook_schema: DatabaseSchema) -> None:
+    async def test_postgres_default(self, stub_inspector, chinook_schema: DatabaseSchema) -> None:
         builder = PromptBuilder(
-            schema_inspector=_StubInspector(chinook_schema),
+            schema_inspector=stub_inspector(chinook_schema),
             default_dialect="postgres",
         )
         prompt = await builder.build(question="?", strategy=get_strategy("D"))
         # Postgres system prompt referencira Postgres specifične stvari
         assert "postgres" in prompt.system.lower() or "sql" in prompt.system.lower()
 
-    async def test_sqlite_override(self, chinook_schema: DatabaseSchema) -> None:
+    async def test_sqlite_override(self, stub_inspector, chinook_schema: DatabaseSchema) -> None:
         builder = PromptBuilder(
-            schema_inspector=_StubInspector(chinook_schema),
+            schema_inspector=stub_inspector(chinook_schema),
             default_dialect="postgres",
         )
         prompt = await builder.build(
@@ -109,8 +108,8 @@ class TestDialect:
 class TestRetryPrompt:
     """Retry prompt sadrži stari SQL + greške."""
 
-    async def test_retry_includes_previous_sql(self, chinook_schema: DatabaseSchema) -> None:
-        builder = PromptBuilder(schema_inspector=_StubInspector(chinook_schema))
+    async def test_retry_includes_previous_sql(self, stub_inspector, chinook_schema: DatabaseSchema) -> None:
+        builder = PromptBuilder(schema_inspector=stub_inspector(chinook_schema))
         prompt = await builder.build_retry(
             question="How many?",
             previous_sql="SELECT * FROM nepostojeca",
@@ -119,10 +118,10 @@ class TestRetryPrompt:
         assert "SELECT * FROM nepostojeca" in prompt.user
         assert "ne postoji" in prompt.user
 
-    async def test_retry_includes_schema(self, chinook_schema: DatabaseSchema) -> None:
+    async def test_retry_includes_schema(self, stub_inspector, chinook_schema: DatabaseSchema) -> None:
         """Retry prompt mora pokazati dostupne tablice da LLM može popraviti."""
 
-        builder = PromptBuilder(schema_inspector=_StubInspector(chinook_schema))
+        builder = PromptBuilder(schema_inspector=stub_inspector(chinook_schema))
         prompt = await builder.build_retry(
             question="?",
             previous_sql="SELECT 1 FROM nope",

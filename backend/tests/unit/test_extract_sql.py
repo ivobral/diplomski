@@ -9,6 +9,35 @@ from __future__ import annotations
 from app.llm.base import extract_sql
 
 
+class TestPlanBlock:
+    """CoT scaffolding wraps the planning text in <plan>...</plan>.
+    Extraction must strip it so the SQL is returned cleanly."""
+
+    def test_plan_followed_by_sql(self) -> None:
+        raw = (
+            "<plan>\n- need artist + album\n- JOIN on artist_id\n</plan>\n"
+            "SELECT a.name FROM artist a"
+        )
+        assert extract_sql(raw) == "SELECT a.name FROM artist a"
+
+    def test_plan_with_select_word_inside(self) -> None:
+        """The word SELECT inside <plan> must NOT be picked up as SQL."""
+
+        raw = (
+            "<plan>plan: SELECT name and count from artist+album</plan>\n"
+            "SELECT a.name, COUNT(*) FROM artist a"
+        )
+        assert extract_sql(raw) == "SELECT a.name, COUNT(*) FROM artist a"
+
+    def test_plan_case_insensitive(self) -> None:
+        raw = "<PLAN>steps</PLAN>\nSELECT 1"
+        assert extract_sql(raw) == "SELECT 1"
+
+    def test_plan_with_markdown_sql_after(self) -> None:
+        raw = "<plan>steps</plan>\n```sql\nSELECT 1\n```"
+        assert extract_sql(raw) == "SELECT 1"
+
+
 class TestMarkdownBlocks:
     def test_sql_code_block(self) -> None:
         raw = "Here is your query:\n```sql\nSELECT * FROM artist\n```\nHope it helps."

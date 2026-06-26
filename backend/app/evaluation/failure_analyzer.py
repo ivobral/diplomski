@@ -415,6 +415,9 @@ class AnalysisReport:
     by_difficulty_d_only: dict[str, AggregateStats]
     by_database_d_only: dict[str, AggregateStats]
     wrong_result_subtypes_d: Counter
+    # New: wrong-result subtypes pivoted by difficulty (D strategy only).
+    # Shape: {"simple": Counter, "moderate": Counter, "challenging": Counter}
+    wrong_subtypes_by_difficulty_d: dict[str, Counter] = field(default_factory=dict)
 
 
 def analyze_run(
@@ -442,6 +445,8 @@ def analyze_run(
         lambda: AggregateStats(label="")
     )
     wrong_subtypes_d: Counter = Counter()
+    # New: per-difficulty wrong-result subtypes (D strategy only).
+    wrong_subtypes_by_diff: dict[str, Counter] = defaultdict(Counter)
 
     for r in run_data["question_results"]:
         gold = gold_results.get(r["question_id"])
@@ -481,6 +486,7 @@ def analyze_run(
 
             if primary == "wrong_result" and sub:
                 wrong_subtypes_d[sub] += 1
+                wrong_subtypes_by_diff[r["difficulty"]][sub] += 1
 
     return AnalysisReport(
         run_id=run_data.get("run_id", "?"),
@@ -491,6 +497,7 @@ def analyze_run(
         by_difficulty_d_only=dict(by_difficulty_d),
         by_database_d_only=dict(by_database_d),
         wrong_result_subtypes_d=wrong_subtypes_d,
+        wrong_subtypes_by_difficulty_d=dict(wrong_subtypes_by_diff),
     )
 
 
@@ -576,6 +583,45 @@ def render_markdown(report: AnalysisReport, show_examples: int = 2) -> str:
             if report.wrong_result_subtypes_d[sub]:
                 lines.append(f"| {sub} | {report.wrong_result_subtypes_d[sub]} |")
         lines.append("")
+
+        # ----- Per-difficulty pivot -----
+        # Pivots wrong-result subtypes by difficulty so the discussion can
+        # claim things like "wrong_columns dominates on challenging, not
+        # on simple". Only shows subtypes that appear at least once.
+        if report.wrong_subtypes_by_difficulty_d:
+            lines.append("### Wrong-result by difficulty (D strategija)")
+            lines.append("")
+            difficulties_present = [
+                d for d in ("simple", "moderate", "challenging")
+                if d in report.wrong_subtypes_by_difficulty_d
+            ]
+
+            header = ["Sub-kategorija"] + [
+                f"{d} ({report.by_difficulty_d_only[d].total if d in report.by_difficulty_d_only else 0})"
+                for d in difficulties_present
+            ]
+            lines.append("| " + " | ".join(header) + " |")
+            lines.append("|" + "|".join(["---"] + ["---:"] * len(difficulties_present)) + "|")
+
+            for sub in WRONG_RESULT_SUBTYPES:
+                # Skip subtypes with no occurrences across any difficulty.
+                if not any(
+                    report.wrong_subtypes_by_difficulty_d.get(d, Counter())[sub]
+                    for d in difficulties_present
+                ):
+                    continue
+                row = [sub]
+                for d in difficulties_present:
+                    count = report.wrong_subtypes_by_difficulty_d.get(d, Counter())[sub]
+                    total_in_diff = (
+                        report.by_difficulty_d_only[d].total
+                        if d in report.by_difficulty_d_only
+                        else 0
+                    )
+                    pct = f" ({count / total_in_diff * 100:.0f}%)" if total_in_diff else ""
+                    row.append(f"{count}{pct}")
+                lines.append("| " + " | ".join(row) + " |")
+            lines.append("")
 
     # ----- Concrete examples per sub-category (D only) -----
     lines.append("## Konkretni primjeri (D strategija)")
